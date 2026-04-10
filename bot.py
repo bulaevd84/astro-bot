@@ -1,4 +1,11 @@
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardRemove,
+    Update,
+)
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -12,7 +19,7 @@ from telegram.ext import (
 BOT_TOKEN = "8659826917:AAHP9yPM2GMjQV2Bb88ZSNVBdt2TKiYMv0k"
 ADMIN_CHAT_ID = 792501571
 
-NAME, TOPIC, PROBLEM, FORMAT, BIRTH, READY = range(6)
+NAME, TOPIC, PROBLEM, FORMAT, BIRTH, PHONE = range(6)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -86,38 +93,49 @@ async def birth(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     context.user_data["birth"] = query.data
 
-    keyboard = [
-        [InlineKeyboardButton("Да", callback_data="Да")],
-        [InlineKeyboardButton("Пока думаю", callback_data="Пока думаю")],
-    ]
+    button = KeyboardButton("Отправить номер", request_contact=True)
+    keyboard = ReplyKeyboardMarkup(
+        [[button]],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
 
     await query.message.reply_text(
-        "Готовы ли вы работать с рекомендациями после разбора?",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        "Оставьте номер телефона для связи 📱\n\n"
+        "С телефона  - отправить номер кнопкой ниже.\n"
+        "С компьютера — введите номер сообщением.",
+        reply_markup=keyboard,
     )
-    return READY
+    return PHONE
 
 
-async def ready(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
+async def phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     username = f"@{user.username}" if user and user.username else "не указан"
-    context.user_data["ready"] = query.data
+
+    if update.message.contact:
+        phone_number = update.message.contact.phone_number
+    else:
+        phone_number = update.message.text
+
+    context.user_data["phone"] = phone_number
 
     text = f"""Новая заявка:
 
 Имя: {context.user_data.get("name", "")}
 Telegram: {username}
+Телефон: {context.user_data.get("phone", "")}
 Запрос: {context.user_data.get("topic", "")}
 Описание: {context.user_data.get("problem", "")}
 Формат: {context.user_data.get("format", "")}
 Время рождения: {context.user_data.get("birth", "")}
-Готовность: {context.user_data.get("ready", "")}
 """
 
     await context.bot.send_message(chat_id=ADMIN_CHAT_ID, text=text)
-    await query.message.reply_text("Готово! Татьяна напишет вам в Telegram 👌")
+    await update.message.reply_text(
+        "Спасибо! Татьяна свяжется с вами 👌",
+        reply_markup=ReplyKeyboardRemove(),
+    )
     return ConversationHandler.END
 
 
@@ -132,7 +150,7 @@ def main():
             PROBLEM: [MessageHandler(filters.TEXT & ~filters.COMMAND, problem)],
             FORMAT: [CallbackQueryHandler(format_step)],
             BIRTH: [CallbackQueryHandler(birth)],
-            READY: [CallbackQueryHandler(ready)],
+            PHONE: [MessageHandler((filters.TEXT | filters.CONTACT) & ~filters.COMMAND, phone)],
         },
         fallbacks=[],
     )
